@@ -7,13 +7,15 @@ use Web::Scraper;
 use URI;
 use File::Basename;
 
+our $VERSION = '0.0.3';
+
 my $home   = 'http://www.pixiv.net';
 my $login  = "${home}/login.php";
 my $index  = "${home}/index.php";
 my $mypage = "${home}/mypage.php";
 my $illust_top = "${home}/member_illust.php";
 
-my $default_over_write = 0; # over write ok
+my $default_over_write = 0; # can not over write
 
 sub new {
     my $class = shift;
@@ -66,7 +68,7 @@ sub download {
     if ($args->{mode} eq 'medium' or $args->{mode} eq 'm') {
         $self->_save_content($scraped_response->{img_src}, $args);
     } else {
-        my $uri = "${home}/" . $scraped_response->{to_bigImg_href};
+        my $uri = $scraped_response->{to_bigImg_href};
         my $res = $self->{user_agent}->get( $uri, 'Referer' => $self->{referer});
         Carp::croak qq(! failed: ) . $res->status_line . qq(\n) if $res->is_error;
         $self->{referer} = $res->base;
@@ -80,7 +82,7 @@ sub download {
         } else {
             my $content = $res->decoded_content;
             while ($content =~ m!unshift\('(http://([^\']+)?)'!g) {
-				delete $args->{file_name}; # over write off
+                delete $args->{file_name}; # over write off
                 $self->_save_content($1, $args);
             }
         }
@@ -98,7 +100,7 @@ sub prepare_download {
 
     my $uri = URI->new( $illust_top );
     $uri->query_form(
-        mode => 'medium',
+        mode      => 'medium',
         illust_id => $illust_id,
     );
 
@@ -119,7 +121,12 @@ sub prepare_download {
         process '//div[@class="works_display"]/a[1]/img[1]', 'img_src' => '@src';
     };
 
-    $self->{scraped_response} = $scraper->scrape($res->decoded_content);
+    $self->{scraped_response} = &{sub{
+		local $_ = $scraper->scrape($res->decoded_content);
+		$_->{to_bigImg_href} = "${home}/". $_->{to_bigImg_href};
+		$_->{author_url}     = "${home}". $_->{author_url};
+		$_;
+    }};
 }
 
 sub login {
@@ -155,3 +162,4 @@ sub login {
 }
 
 1;
+
