@@ -39,7 +39,7 @@ for my $page ($page_start..$page_max) {
         'Referer' => $res->base,
     );
     die qq(! failed: can not access "${bkm}" $!\n) if $res->is_error;
-    warn $res->base . " now\n";
+    # warn $res->base . " now\n";
 
     my $html = $res->decoded_content;
     while ($html =~ m|<li class="image"><a href=".+?illust_id=(\d+?)"|g) {
@@ -65,3 +65,20 @@ for my $page ($page_start..$page_max) {
 }
 
 exit 0;
+
+__END__
+
+「お気に入りユーザー新着イラスト」から未DLのものをDLして保存する（ただし、1-2ページのもの）
+
+  http://www.pixiv.net/bookmark_new_illust.php?p=__num__
+
+[start]$client->login でログイン
+> 新着イラストのページへ移動
+> 各イラストのtop へ移動
+> $client->prepare_download で、著者名、イラストタイトル、URL を取得
+> 保存するファイルと同じファイルがないかをチェック
+> 既に存在する場合は、スクリプト停止
+> 未保存の場合で、保存するディレクトリがなければ、ディレクトリを作る
+> $client->downloadでDL（画像URLへ移動 > DL）
+> 次のイラストのtopへ移動
+[end]
