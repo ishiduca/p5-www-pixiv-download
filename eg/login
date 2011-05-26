@@ -1,0 +1,28 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+use Web::Scraper;
+use WWW::Pixiv::Download;
+use Config::Pit;
+use Data::Dumper;
+
+my $config = pit_get('www.pixiv.net', require => {
+	pixiv_id => '', pass => '',
+});
+die qq(! failed: can not get "pixiv_id" and "pass"\n) if ! %$config;
+
+my $client = WWW::Pixiv::Download->new(
+	pixiv_id => $config->{pixiv_id},
+	pass     => $config->{pass},
+	look     => 1,
+);
+
+warn $client->master_user_id;
+
+exit 0;
+
+__END__
+
+  my $master_user_id = $client->master_user_id;
+
+で、ログインしたユーザーの IDナンバーが取得できます
