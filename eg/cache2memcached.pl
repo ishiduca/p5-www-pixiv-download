@@ -32,8 +32,7 @@ $client->download($illust_id, {
     cb   => sub {
         my($chunk, $res, $proto) = @_;
         unless ($stuffix) {
-            $stuffix = $res->header('Content-Type');
-            $stuffix =~ s|image/||;
+            $stuffix = (split '/', $res->header('Content-Type'))[-1];
         }
         local $/;
         $buf .= $chunk;
@@ -54,3 +53,7 @@ sub test_print {
 
     $cache->delete($illust_id);
 }
+__END__
+
+memcachedにダウンロードした画像を Base64エンコードして、キャッシュする
+
