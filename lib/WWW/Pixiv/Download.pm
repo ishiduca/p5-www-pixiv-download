@@ -7,7 +7,7 @@ use Web::Scraper;
 use URI;
 use File::Basename;
 
-our $VERSION = '0.0.3';
+our $VERSION = '0.0.4';
 
 my $home   = 'http://www.pixiv.net';
 my $login  = "${home}/login.php";
@@ -146,6 +146,13 @@ sub prepare_download {
     }};
 }
 
+sub user_agent {
+    my $self = shift;
+    my $ua = shift || return $self->{user_agent};
+    Carp::croak "! usage: $self->ua(\$LWP_LIKE_OBJECT)" unless eval { $ua->isa('LWP::UserAgent') };
+    $self->{user_agent} = $ua;
+}
+
 sub get_master_user_id {
     my $html = shift;
     my $scraper = scraper {
@@ -191,7 +198,7 @@ sub login {
     }
 
     $self->{referer}  = $res->base;
-    $self->{master_user_id} = get_master_user_id $res->decoded_content;
+    $self->{master_user_id} = get_master_user_id( $res->decoded_content );
 
     warn qq(--> success: logged in "). $self->{referer}. qq("\n) if $self->{look};
 
