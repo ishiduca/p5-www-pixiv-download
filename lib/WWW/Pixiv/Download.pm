@@ -34,7 +34,7 @@ sub _default_cb {
 
     if (-e $file_path && ! $self->{over_write}) {
         warn qq(--> no download: "${file_path}" already exists.\n) if $self->{look};
-        return undef;
+        return;
     }
     open my $fh, '>', $file_path or die qq(! failed: can not open "${file_path}" $!\n);
     binmode $fh;
@@ -153,7 +153,7 @@ sub user_agent {
     $self->{user_agent} = $ua;
 }
 
-sub get_master_user_id {
+sub _get_master_user_id {
     my $html = shift;
     my $scraper = scraper {
         process '//div[@class="ui-layout-west"]/div[1]/a', 'profile_to' => '@href';
@@ -198,7 +198,7 @@ sub login {
     }
 
     $self->{referer}  = $res->base;
-    $self->{master_user_id} = get_master_user_id( $res->decoded_content );
+    $self->{master_user_id} = _get_master_user_id( $res->decoded_content );
 
     warn qq(--> success: logged in "). $self->{referer}. qq("\n) if $self->{look};
 
