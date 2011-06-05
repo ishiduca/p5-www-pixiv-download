@@ -9,7 +9,7 @@ my $usage = "usage: $0 illust_id\n";
 our($h);
 
 $h    and warn $usage and exit 0;
-@ARGV or  warn $usage and exit 255;
+@ARGV or  die $usage;
 
 my $config = pit_get('www.pixiv.net', require =>{
     pixiv_id => 'pixiv_id', pass => 'pass',
@@ -32,11 +32,9 @@ exit 0;
 sub download {
     my $illust_id = shift;
 
-    my $scraped_response = $client->prepare_download($illust_id);
+    my $info = $client->prepare_download($illust_id);
     my $path_name = join '/',
-        $ENV{HOME}, 'Desktop/Image',
-        $scraped_response->{author_name},
-        $scraped_response->{title};
+        $ENV{HOME}, 'Desktop/Image', $info->{author}->{name}, $info->{title};
 
     unless (-e $path_name) {
         warn qq(--> not found directory "${path_name}"\n);
