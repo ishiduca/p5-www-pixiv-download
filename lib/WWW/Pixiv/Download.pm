@@ -7,7 +7,7 @@ use Web::Scraper;
 use URI;
 use File::Basename;
 
-our $VERSION = '0.0.4';
+our $VERSION = '0.0.5';
 
 my $home   = 'http://www.pixiv.net';
 my $login  = "${home}/login.php";
@@ -23,6 +23,10 @@ sub new {
     $args{user_agent} ||= &{sub {
         my $ua = LWP::UserAgent->new( cookie_jar => {} );
         push @{ $ua->requests_redirectable }, 'POST';
+        $ua->add_handler(request_prepare => sub {
+            my($request, $ua, $h) = @_;
+            $request->header('Referer' => $args{referer}) if $args{referer};
+        });
         $ua;
     }};
     $args{over_write} ||= $default_over_write;
@@ -54,13 +58,12 @@ sub _save_content {
     $file_name =~ s/\?.*//;
 
     my $content_cb = ref $args->{cb} ne 'CODE'
-                   ? $self->_default_cb(my $file_path = "${path_name}${file_name}")
+                   ? $self->_default_cb(my $file_path = "${path_name}${file_name}") # "undef", if same file already.
                    : $args->{cb};
 
     return if ! $content_cb; # if $content_db is "undef", exists the same file already.
 
     my $res = $self->{user_agent}->get($img_src,
-        'Referer'     => $self->{referer},
         ':content_cb' => $content_cb,
     );
     Carp::croak '! failed: download error ' . $res->status_line . "\n" if $res->is_error;
@@ -71,36 +74,28 @@ sub _save_content {
 sub download {
     my($self, $illust_id, $args) = @_;
 
-    my $scraped_response = $self->{scraped_response};
+    my $info = $self->{info};
     unless ($self->{referer} =~ /$illust_id/ and
-        $scraped_response->{to_bigImg_href} =~ /$illust_id/ and
-        $scraped_response->{img_src}        =~ /$illust_id/) {
-        $scraped_response = $self->prepare_download($illust_id);
+        $info->{contents}->{url} =~ /$illust_id/ and
+        $info->{img_src}         =~ /$illust_id/) {
+        $info = $self->prepare_download($illust_id);
     }
 
     if ($args->{mode} eq 'medium' or $args->{mode} eq 'm') {
-        $self->_save_content($scraped_response->{img_src}, $args);
+        $self->_save_content($info->{img_src}, $args);
     } else {
-        my $uri = $scraped_response->{to_bigImg_href};
-        my $res = $self->{user_agent}->get( $uri, 'Referer' => $self->{referer});
-        Carp::croak qq(! failed: ) . $res->status_line . qq(\n) if $res->is_error;
-        $self->{referer} = $res->base;
-        warn qq(--> success: access ") . $self->{referer} . qq("\n) if $self->{look};
-
-        if ($self->{referer} =~ /mode=big/) {
-            my $scraper = scraper {
-                process '//img[1]', 'img_src' => '@src';
-            };
-            $self->_save_content($scraper->scrape($res->decoded_content)->{img_src}, $args);
+        my $contents = $info->{contents};
+        if ($contents->{type} eq 'manga') { # over write off
+            delete $args->{file_name};
+        }
+        if ($args->{manga_pages}) {
+            for my $page (@{$args->{manga_pages}}) {
+                my $img_src = $contents->{img_srcs}->[$page];
+                $self->_save_content($img_src, $args);
+            }
         } else {
-            my $content = $res->decoded_content;
-            while ($content =~ m!unshift\('(http://([^\']+)?)'!g) {
-                delete $args->{file_name}; # over write off
-                my($img_name, $img_path) = fileparse $1;
-                $img_name =~ s/_/_big_/;
-                $self->_save_content("${img_path}${img_name}", $args);
-                # if midiem size download
-                #$self->_save_content($1, $args);
+            for my $img_src (@{$contents->{img_srcs}}) {
+                $self->_save_content($img_src, $args);
             }
         }
     }
@@ -111,7 +106,7 @@ sub download {
 sub prepare_download {
     my($self, $illust_id) = @_;
 
-    Carp::croak qq(failed: not found "illust_id".\n) unless $illust_id;
+    Carp::croak qq(! failed: not found "illust_id".\n) unless $illust_id;
 
     $self->login if ! $self->{master_user_id};
 
@@ -121,29 +116,82 @@ sub prepare_download {
         illust_id => $illust_id,
     );
 
-    my $res = $self->{user_agent}->get($uri, 'Referer' => $self->{referer});
-    Carp::croak qq(! failed: can not access "). $uri . '" '
+    my $res = $self->{user_agent}->get($uri);
+    Carp::croak qq(! failed: can not fetch "). $uri . '" '
         . $res->status_line . "\n" unless $res->is_success;
     Carp::croak qq(! failed: referer error ?\n) if $uri ne URI->new($res->base);
 
-    $self->{referer} = $res->base;
-    warn qq(--> success: access "). $self->{referer}. qq("\n) if $self->{look};
+    $self->{referer} = ($res->base)->as_string;
+    warn qq(--> success: fetch "). $self->{referer}. qq("\n) if $self->{look};
 
     my $scraper = scraper {
         process '//h3[1]', 'title' => 'TEXT';
         process '//p[@class="works_caption"]', 'description' => 'HTML';
         process '//a[@class="avatar_m"]', 'author_name' => '@title';
-        process '//a[@class="avatar_m"]', 'author_url'  => '@href';
-        process '//div[@class="works_display"]/a[1]', 'to_bigImg_href' => '@href';
+        process '//a[@class="avatar_m"]', 'author_url'  => [ '@href', sub {
+            return $home . $_;
+        } ];
+        process '//div[@class="works_display"]/a[1]', 'contents_url' => [ '@href', sub {
+            return join '/', $home, $_;
+        } ];
         process '//div[@class="works_display"]/a[1]/img[1]', 'img_src' => '@src';
     };
 
-    $self->{scraped_response} = &{sub{
-        local $_ = $scraper->scrape($res->decoded_content);
-        $_->{to_bigImg_href} = "${home}/". $_->{to_bigImg_href};
-        $_->{author_url}     = "${home}". $_->{author_url};
-        $_;
-    }};
+    $self->{info} = $self->_new_infomation($scraper->scrape($res->decoded_content));
+}
+
+sub _new_infomation {
+    my($self, $info_old) = @_;
+    my $info = {
+        homepage_url => $self->{referer},
+        title        => $info_old->{title},
+        description  => $info_old->{description},
+        img_src      => $info_old->{img_src},
+    };
+
+    my($contents_type, @contents_srcs);
+    my $res = $self->{user_agent}->get( $info_old->{contents_url} );
+    Carp::croak qq(! failed: ") . $res->status_line . qq("\n) if $res->is_error;
+    warn qq(--> success: fetch ") . ($res->base)->as_string . qq("\n) if $self->{look};
+
+    if ($info_old->{contents_url} =~ /mode=big/) {
+        my $scraper = scraper {
+            process '//img[1]', 'img_src' => '@src';
+        };
+        push @contents_srcs, $scraper->scrape($res->decoded_content)->{img_src};
+        $contents_type = 'illust';
+    } else {
+        my $html = $res->decoded_content;
+        while ($html =~ m!unshift\('(http://([^\']+)?)'!g) {
+            my $href = $1;
+            my($img_name, $img_path) = fileparse $href;
+            $img_name =~ s/_/_big_/;
+
+            my $uri = URI->new("${img_path}${img_name}");
+            $res = $self->{user_agent}->head($uri);
+            if ($res->status_line =~ /404/) {
+                $uri = URI->new($href);
+            } elsif ($res->is_error) {
+                Carp::croak '! faild: '. $res->status_line . " \n";
+            }
+
+            push @contents_srcs, $uri->as_string;
+        }
+        $contents_type = 'manga';
+    }
+
+    $info->{author} = {
+        name => $info_old->{author_name},
+        url  => $info_old->{author_url},
+    };
+
+    $info->{contents} = {
+        url      => $info_old->{contents_url},
+        type     => $contents_type,
+        img_srcs => \@contents_srcs,
+    };
+
+    $info;
 }
 
 sub user_agent {
@@ -165,9 +213,7 @@ sub _get_master_user_id {
 
 sub master_user_id {
     my $self = shift;
-    unless ($self->{master_user_id}) {
-        $self->login;
-    }
+    $self->login unless $self->{master_user_id};
     $self->{master_user_id};
 }
 
@@ -197,7 +243,7 @@ sub login {
         Carp::croak qq(! failed: wrong "pixiv_id" or "password". ) . $res->base . " now\n";
     }
 
-    $self->{referer}  = $res->base;
+    $self->{referer}  = ($res->base)->as_string;
     $self->{master_user_id} = _get_master_user_id( $res->decoded_content );
 
     warn qq(--> success: logged in "). $self->{referer}. qq("\n) if $self->{look};
@@ -208,6 +254,7 @@ sub login {
 1;
 
 __END__
+
 =head1 NAME
 
 WWW::Pixiv::Download - Download pictures from www.pixiv.net
@@ -274,19 +321,33 @@ maybe $response->base eq "http://www.pixiv.net/mypage.php"
       cb => \&callback,
   });
 
-  Download the picture files. the first parameter is passed to pixiv url.
-  if that contents is "manga", then download all original size picture files of here.
-  \&callback details SEE ALSO L<LWP::UserAgent> ':content_cb'.
+Download the picture files. the first parameter is passed to pixiv url.
+if that contents is "manga", then download all original size picture files of here.
+\&callback details SEE ALSO L<LWP::UserAgent> ':content_cb'.
 
 =item B<prepare_download>
 
   $inf = $client->prepare_download($illust_id);
-
-  $author_name          = $inf->{author_name};
-  $img_src_medeium_mode = $inf->{img_src};
+  # if Dumper $inf;
+  $inf = {
+      homepage_url => 'http://www.pixiv.net/member_illust.php?mode=medium&illust_id=$illust_id,
+      title        => works title,
+      descrption   => works description,
+      img_src      => 'http://.../img/usename/image_m.jpg,
+      author       => {
+          url  => 'http://www.pixi.net/member.php?id=nnnn',
+          name => user name,
+      },
+      contents => {
+          type     => (illust|manga),
+          url      => 'http://www.pixiv.net/member_illust.php?mode=(big|manga)&illust_id=$illust_id,
+          img_srcs => [
+              'http://.../img/username/image.jpg', ...
+          ],
+      },
+  };
 
 Returns a hash reference of the information about the works.
-this propeties is "title", "description", "author_name", "author_url", "img_src", "to_bigImg_href";
 
 =back
 
