@@ -1,10 +1,6 @@
 #!/usr/bin/env perl -s
 use strict;
 use warnings;
-
-use lib '../lib';
-no  lib '/Users/ishiduca/perl5/perlbrew/perls/perl-5.12.0/lib/site_perl/5.12.0/WWW/Pixiv';
-
 use Config::Pit;
 use Time::HiRes qw(sleep);
 use URI qw(query_form);
