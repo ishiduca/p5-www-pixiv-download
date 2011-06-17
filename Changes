@@ -1,5 +1,8 @@
 Revision history for WWW-Pixiv-Download
 
+0.0.6  Fri Jun 17 13:04:00  2011
+       add "retry".
+
 0.0.5  Sun Jun  5 22:48:41  2011
        LWP::UserAgent Tuning.
        Changed prepare_download method of return response.
