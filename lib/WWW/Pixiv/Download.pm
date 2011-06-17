@@ -5,9 +5,10 @@ use Carp;
 use LWP::UserAgent;
 use Web::Scraper;
 use URI;
+use Sub::Retry;
 use File::Basename;
 
-our $VERSION = '0.0.5';
+our $VERSION = '0.0.6';
 
 my $home   = 'http://www.pixiv.net';
 my $login  = "${home}/login.php";
@@ -16,7 +17,7 @@ my $mypage = "${home}/mypage.php";
 my $illust_top = "${home}/member_illust.php";
 
 my $default_over_write = 0; # can not over write
-
+my $default_retry      = 3; # retry time
 sub new {
     my $class = shift;
     my %args  = @_;
@@ -30,6 +31,7 @@ sub new {
         $ua;
     }};
     $args{over_write} ||= $default_over_write;
+    $args{retry}      ||= $default_retry;
     bless \%args, $class;
 }
 
@@ -63,10 +65,23 @@ sub _save_content {
 
     return if ! $content_cb; # if $content_db is "undef", exists the same file already.
 
-    my $res = $self->{user_agent}->get($img_src,
-        ':content_cb' => $content_cb,
-    );
-    Carp::croak '! failed: download error ' . $res->status_line . "\n" if $res->is_error;
+    my $count = 0;
+    my $res = retry $self->{retry}, 2, sub {
+        warn qq(----> try: "). ++$count . qq(" time.\n) if $self->{look};
+        my $res = $self->{user_agent}->get($img_src,
+            ':content_cb' => $content_cb,
+        );
+        $res;
+    },
+    sub {
+        my $res = shift;
+        my $status = $res->status_line;
+        $status =~ /^5/ ? 1 : 0;
+    };
+    if ($res->is_error) {
+        unlink $file_path;
+        Carp::croak '! failed: download error ' . $res->status_line . "\n";
+    }
     warn qq(--> success: download ") . $res->base . qq(" ==> ") . $file_path . qq("\n) if $self->{look} and $file_path;
 
 }
@@ -107,8 +122,11 @@ sub prepare_download {
     my($self, $illust_id) = @_;
 
     Carp::croak qq(! failed: not found "illust_id".\n) unless $illust_id;
-
-    $self->login if ! $self->{master_user_id};
+    my $cookie_jar = $self->{user_agent}->cookie_jar;
+    unless ($cookie_jar && $cookie_jar->as_string =~ /PHPSESSID=(\w+?);.+?domain=(\.pixiv\.net)/) {
+        $self->login if ! $self->{master_user_id};
+    }
+    #$self->login if ! $self->{master_user_id};
 
     my $uri = URI->new( $illust_top );
     $uri->query_form(
@@ -295,6 +313,7 @@ These parameters are required to login.
 These parameters are set as needed.
 set "over_write" as "1", to allow overwrite picture files.
 set "look" as "1", to warn the progress of any client's working.
+set "retry" as retry times, to warn download retry.
 
 =item B<login>
 

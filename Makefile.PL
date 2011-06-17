@@ -9,6 +9,7 @@ all_from 'lib/WWW/Pixiv/Download.pm';
 requires 'LWP::UserAgent';
 requires 'Web::Scraper';
 requires 'URI';
+requires 'Sub::Retry';
 requires 'File::Basename';
 
 test_requires 'Test::More';

@@ -18,12 +18,14 @@ no_index:
   directory:
     - inc
     - t
+    - xt
 requires:
   File::Basename: 0
   LWP::UserAgent: 0
+  Sub::Retry: 0
   URI: 0
   Web::Scraper: 0
   perl: 5.005
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.0.4
+version: 0.0.6
